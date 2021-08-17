@@ -1,0 +1,9 @@
+requests
+lxml
+pandas
+string
+os
+sys
+traceback
+pickle
+discord
