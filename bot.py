@@ -76,7 +76,7 @@ class MyClient(commands.Bot):
 			Given a location, send a formatted embed to the given channel
 		"""
 		suburb = location_info['Suburb']
-		place = location_info['Place']
+		place = location_info['Place'].replace('FAQs for schools', '')
 		date = location_info['Date']
 		arrival = location_info['Arrival Time']
 		depature = location_info['Departure Time']
