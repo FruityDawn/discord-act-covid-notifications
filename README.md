@@ -1,5 +1,5 @@
-# Discord ACT COIVD Notifications
-Discord bot that periodically scrapes the ACT Covid website for exposure sites and sends alerts.
+# Discord ACT COVID-19 Notifications
+Discord bot that periodically scrapes the ACT COVID-19 website for exposure sites and sends alerts.
 <img src= "example.png" width= "342" height= "137">
  
 # Contents #
