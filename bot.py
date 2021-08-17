@@ -6,6 +6,7 @@ import os.path
 import sys
 import traceback
 import pickle
+import asyncio
 
 import discord
 from discord.ext import commands, tasks
@@ -14,7 +15,7 @@ TOKEN = 'YOUR_TOKEN_HERE' # Bot Token
 
 saved_locations = 'saved_locations.csv' # Scraped data location
 settings_path = 'server_settings.pkl' # Server setting location
-polling_rate = 10 # Rate in which the ACT Covid-19 website is polled
+polling_rate = 10 # Rate in which the ACT COVID-19 website is polled
 
 url = 'https://www.covid19.act.gov.au/act-status-and-response/act-covid-19-exposure-locations' # URL to scrape
 
@@ -29,19 +30,23 @@ def parse_url(url):
 	tr_elements = doc.xpath('//tr')
 
 	header = ['Status', 'Suburb', 'Place', 'Date', 'Arrival Time', 'Departure Time']
+	header2 = ['Status', 'Suburb', 'Place', 'Date', 'Arrival time', ' Departure time'] # Monitor for symptoms header is slightly different
 
 	df = dict()
 
 	i = 0
+	exposure_type = 0
 
 	for t in tr_elements:
 		content = [cell.text_content().replace('\n', '').replace('\r', '').replace('\xa0', '') for cell in t]
 
-		if not (pd.Series(content) == pd.Series(header)).all(): # Don't add header rows
-			df[i] = content
+		if (pd.Series(content) == pd.Series(header)).all() or (pd.Series(content) == pd.Series(header2)).all(): # Don't add header rows
+			exposure_type += 1
+		else:
+			df[i] = content + [exposure_type]
 			i += 1
 
-	return pd.DataFrame.from_dict(df, orient = 'index', columns = header).drop('Status', axis = 1) # Status column is not useful
+	return pd.DataFrame.from_dict(df, orient = 'index', columns = header + ['Exposure Type']).drop('Status', axis = 1) # Status column is not useful
 
 class MyClient(commands.Bot):
 	server_settings = None
@@ -79,14 +84,30 @@ class MyClient(commands.Bot):
 		place = location_info['Place'].replace('FAQs for schools', '')
 		date = location_info['Date']
 		arrival = location_info['Arrival Time']
-		depature = location_info['Departure Time']
+		departure = location_info['Departure Time']
+		severity = location_info['Exposure Type']
+
+		if severity == 1:
+			footer = 'Close contact'
+			colour = 0xe74c3c
+		elif severity == 2:
+			footer = 'Casual contact'
+			colour = 0xe67e22
+		elif severity == 3:
+			footer = 'Monitor for symptoms'
+			colour = 0x3498db
+
 
 		title = '%s' % (place)
-		desc = '%s \n %s - %s' % (date, arrival, depature)
+		desc = '%s \n %s - %s' % (date, arrival, departure)
 		img = 'https://emojis.slackmojis.com/emojis/images/1613270132/12724/among_us_report.png'
-		embed = discord.Embed(title = title, description = desc, color = 3, author = 'hi')
+		embed = discord.Embed(title = title, description = desc, color = colour, author = 'hi')
 		embed.set_author(name = suburb)
 		embed.set_thumbnail(url = img)
+		embed.set_footer(text = footer)
+
+
+
 		await channel.send(embed = embed)
 
 
@@ -98,7 +119,6 @@ class MyClient(commands.Bot):
 			if len(message.content.strip()) > 0 and message.content.strip()[0] == '!': # Ignore empty/non-command messages
 				command = message.content[1:].strip().split(' ')
 				command = [cmd.strip() for cmd in command if len(cmd.strip()) > 0] # Strip whitespace
-				self.locations = pd.read_csv(saved_locations)
 
 				if command[0] == 'check':
 					if not await self.check_new_cases(url):
@@ -115,6 +135,12 @@ class MyClient(commands.Bot):
 						await self.unsubscribe(message.channel, locations = command[1:])
 					else:
 						await self.unsubscribe(message.channel)
+				elif command[0] == 'get_settings':
+					print(self.server_settings)
+				elif command[0] == 'update_save':
+					self.locations = pd.read_csv(saved_locations)
+					await message.channel.send('Updated')
+
 		except:
 			print(traceback.format_exc())
 
@@ -189,8 +215,32 @@ class MyClient(commands.Bot):
 		prev_locations = self.locations
 		updated_locations = parse_url(url)
 
-		# Determine new locations
-		new_cases = prev_locations.append(updated_locations).drop_duplicates(keep = False)
+		# Determine new cases by comparing with number of previous cases of that type
+
+		prev_close = prev_locations[prev_locations['Exposure Type'] == 1]
+		prev_casual = prev_locations[prev_locations['Exposure Type'] == 2]
+		prev_monitor = prev_locations[prev_locations['Exposure Type'] == 3]
+
+		updated_close = updated_locations[updated_locations['Exposure Type'] == 1]
+		updated_casual = updated_locations[updated_locations['Exposure Type'] == 2]
+		updated_monitor = updated_locations[updated_locations['Exposure Type'] == 3]
+
+		new_cases = updated_locations[updated_locations['Exposure Type'] == 4] # Just a cheeky way to get an empty dataframe with the right header
+
+		if updated_close.shape[0] > prev_close.shape[0]:
+				new_close = updated_close.iloc[prev_close.shape[0]:]
+				new_cases = new_cases.append(new_close)
+
+		if updated_casual.shape[0] > prev_casual.shape[0]:
+				new_casual = updated_casual.iloc[prev_casual.shape[0]:]
+				new_cases = new_cases.append(new_casual)
+
+		if updated_monitor.shape[0] > prev_monitor.shape[0]:
+				new_monitor = updated_monitor.iloc[prev_monitor.shape[0]:]
+				new_cases = new_cases.append(new_monitor)
+
+		# Determine new locations OLD
+		# new_cases = prev_locations.append(updated_locations).drop_duplicates(subset = ['Suburb', 'Place', 'Date'], keep = False)
 
 		if new_cases.shape[0] == 0:
 			return False
@@ -203,7 +253,7 @@ class MyClient(commands.Bot):
 		# Send notifications
 		for channel_id in self.server_settings:
 			channel = discord.utils.get(self.get_all_channels(), id = channel_id)
-			subscribed_locations = [location.replace('_', '') for location in self.server_settings[channel_id]] # Change underscores to spaces
+			subscribed_locations = [location.replace('_', ' ') for location in self.server_settings[channel_id]] # Change underscores to spaces
 
 			updates = new_cases.copy()
 
@@ -213,6 +263,7 @@ class MyClient(commands.Bot):
 
 			for _, case in updates.iterrows():
 				await self.print_location(case, channel)
+				await asyncio.sleep(1)
 
 		return True
 

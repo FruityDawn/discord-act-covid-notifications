@@ -14,7 +14,7 @@ Clone/download this repo and navigate to it and ensure you have the rest of the 
 Replace `YOUR_TOKEN_HERE` with your discord bot's token.
 
 ```
-py bot.py
+python bot.py
 ```
   
 # Commands  
