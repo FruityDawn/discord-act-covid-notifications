@@ -30,7 +30,11 @@ def parse_url(url):
 	page_text = page.text
 	latest_cases = re.search('".*csv"', page.text).group(0)
 
-	return pd.read_csv(latest_cases[1:-1]).drop(['Event Id', 'Status', 'State'], axis = 1) # Remove quote marks from url
+	df_cases = pd.read_csv(latest_cases[1:-1]).drop(['Event Id', 'Status', 'State'], axis = 1) # Remove quote marks from url
+
+	# Correct inconsistent dates (some do not have zeros in front - makes comparisons difficult)
+	df_cases['Date'] = df_cases['Date'].apply(lambda x: '0' + x if len(x) > 2 and x[1] == '/' else x)
+	return df_cases
 
 class MyClient(commands.Bot):
 	server_settings = None
@@ -198,13 +202,14 @@ class MyClient(commands.Bot):
 		print('Previous size: %s - Updated size: %s' % (prev_locations.shape[0], updated_locations.shape[0]))
 
 		new_cases = updated_locations[updated_locations['Contact'] == 4] # Just a cheeky way to get an empty dataframe with the right header
-
 		# Determine new locations
 		new_cases = prev_locations.append(updated_locations).drop_duplicates(subset = ['Exposure Site', 'Suburb', 'Date'], keep = False)
 
 		if new_cases.shape[0] == 0:
 			print('No new cases found')
 			return False
+
+		print('%s new/updated exposure sites scraped' % new_cases.shape[0])
 
 		# Update locations on disk
 		if update_if_new:
@@ -221,10 +226,11 @@ class MyClient(commands.Bot):
 			# Prune to only subscribed locations for relevant channels
 			if len(subscribed_locations) > 0:
 				updates = new_cases[new_cases['Suburb'].isin(subscribed_locations)]
+				await channel.send('%s new/updated exposure sites for your subscribed suburbs' % updates.shape[0])
 
 			for _, case in updates.iterrows():
 				await self.print_location(case, channel)
-				await asyncio.sleep(1)
+				await asyncio.sleep(0.5)
 
 		return True
 
