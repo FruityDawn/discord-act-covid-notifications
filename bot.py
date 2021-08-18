@@ -226,6 +226,8 @@ class MyClient(commands.Bot):
 			# Prune to only subscribed locations for relevant channels
 			if len(subscribed_locations) > 0:
 				updates = new_cases[new_cases['Suburb'].isin(subscribed_locations)]
+
+			if updates.shape[0] > 0:
 				await channel.send('%s new/updated exposure sites for your subscribed suburbs' % updates.shape[0])
 
 			for _, case in updates.iterrows():
