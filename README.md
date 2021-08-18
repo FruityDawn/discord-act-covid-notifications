@@ -1,6 +1,6 @@
 # Discord ACT COVID-19 Notifications
 Discord bot that periodically scrapes the ACT COVID-19 website for exposure sites and sends alerts.
-<img src= "example.png" width= "342" height= "137">
+<img src= "example.png" width= "347" height= "155">
  
 # Contents #
 [Installation](#installation)  
@@ -19,11 +19,11 @@ python bot.py
   
 # Commands  
 **Subscribe**: !subscribe *[loc1]* *[loc2]* ..  
-Subscribe a channel to notifications. Optional arguments are if you only want to be notified about particular suburbs. Replace spaces with underscores.
+Subscribe a channel to notifications. Optional arguments are if you only want to be notified about particular suburbs. Replace suburbs with spaces with underscores.
 
 
 **Unsubscribe**: !unsubscribe *[loc1]* *[loc2]* ..  
-Unsubscribe a channel to notifications. Optional arguments are if you only want to remove notifications for particular suburbs. Replace spaces with underscores.
+Unsubscribe a channel to notifications. Optional arguments are if you only want to remove notifications for particular suburbs. Replace suburbs with spaces with underscores.
 
 
 **Subscribed**: !subscribed  

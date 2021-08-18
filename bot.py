@@ -7,6 +7,8 @@ import sys
 import traceback
 import pickle
 import asyncio
+from datetime import datetime
+import re
 
 import discord
 from discord.ext import commands, tasks
@@ -23,30 +25,12 @@ url = 'https://www.covid19.act.gov.au/act-status-and-response/act-covid-19-expos
 def parse_url(url):
 	"""
 		Given a url, scrapes the url for cases and returns them as a pandas DataFrame
-		Inspired from: https://towardsdatascience.com/web-scraping-html-tables-with-python-c9baba21059
 	"""
 	page = requests.get(url)
-	doc = lh.fromstring(page.content)
-	tr_elements = doc.xpath('//tr')
+	page_text = page.text
+	latest_cases = re.search('".*csv"', page.text).group(0)
 
-	header = ['Status', 'Suburb', 'Place', 'Date', 'Arrival Time', 'Departure Time']
-	header2 = ['Status', 'Suburb', 'Place', 'Date', 'Arrival time', ' Departure time'] # Monitor for symptoms header is slightly different
-
-	df = dict()
-
-	i = 0
-	exposure_type = 0
-
-	for t in tr_elements:
-		content = [cell.text_content().replace('\n', '').replace('\r', '').replace('\xa0', '') for cell in t]
-
-		if (pd.Series(content) == pd.Series(header)).all() or (pd.Series(content) == pd.Series(header2)).all(): # Don't add header rows
-			exposure_type += 1
-		else:
-			df[i] = content + [exposure_type]
-			i += 1
-
-	return pd.DataFrame.from_dict(df, orient = 'index', columns = header + ['Exposure Type']).drop('Status', axis = 1) # Status column is not useful
+	return pd.read_csv(latest_cases[1:-1]).drop(['Event Id', 'Status', 'State'], axis = 1) # Remove quote marks from url
 
 class MyClient(commands.Bot):
 	server_settings = None
@@ -81,19 +65,19 @@ class MyClient(commands.Bot):
 			Given a location, send a formatted embed to the given channel
 		"""
 		suburb = location_info['Suburb']
-		place = location_info['Place'].replace('FAQs for schools', '')
+		place = location_info['Exposure Site'].replace('FAQs for schools', '')
 		date = location_info['Date']
 		arrival = location_info['Arrival Time']
 		departure = location_info['Departure Time']
-		severity = location_info['Exposure Type']
+		severity = location_info['Contact']
 
-		if severity == 1:
+		if severity == 'Close':
 			footer = 'Close contact'
 			colour = 0xe74c3c
-		elif severity == 2:
+		elif severity == 'Casual':
 			footer = 'Casual contact'
 			colour = 0xe67e22
-		elif severity == 3:
+		else:
 			footer = 'Monitor for symptoms'
 			colour = 0x3498db
 
@@ -135,12 +119,6 @@ class MyClient(commands.Bot):
 						await self.unsubscribe(message.channel, locations = command[1:])
 					else:
 						await self.unsubscribe(message.channel)
-				elif command[0] == 'get_settings':
-					print(self.server_settings)
-				elif command[0] == 'update_save':
-					self.locations = pd.read_csv(saved_locations)
-					await message.channel.send('Updated')
-
 		except:
 			print(traceback.format_exc())
 
@@ -212,37 +190,20 @@ class MyClient(commands.Bot):
 		"""
 			Check for new cases and send notifications to subscribed channels
 		"""
+		print('%s - Checking for new cases' % datetime.now().strftime('%H:%M:%S'))
+
 		prev_locations = self.locations
 		updated_locations = parse_url(url)
 
-		# Determine new cases by comparing with number of previous cases of that type
+		print('Previous size: %s - Updated size: %s' % (prev_locations.shape[0], updated_locations.shape[0]))
 
-		prev_close = prev_locations[prev_locations['Exposure Type'] == 1]
-		prev_casual = prev_locations[prev_locations['Exposure Type'] == 2]
-		prev_monitor = prev_locations[prev_locations['Exposure Type'] == 3]
+		new_cases = updated_locations[updated_locations['Contact'] == 4] # Just a cheeky way to get an empty dataframe with the right header
 
-		updated_close = updated_locations[updated_locations['Exposure Type'] == 1]
-		updated_casual = updated_locations[updated_locations['Exposure Type'] == 2]
-		updated_monitor = updated_locations[updated_locations['Exposure Type'] == 3]
-
-		new_cases = updated_locations[updated_locations['Exposure Type'] == 4] # Just a cheeky way to get an empty dataframe with the right header
-
-		if updated_close.shape[0] > prev_close.shape[0]:
-				new_close = updated_close.iloc[prev_close.shape[0]:]
-				new_cases = new_cases.append(new_close)
-
-		if updated_casual.shape[0] > prev_casual.shape[0]:
-				new_casual = updated_casual.iloc[prev_casual.shape[0]:]
-				new_cases = new_cases.append(new_casual)
-
-		if updated_monitor.shape[0] > prev_monitor.shape[0]:
-				new_monitor = updated_monitor.iloc[prev_monitor.shape[0]:]
-				new_cases = new_cases.append(new_monitor)
-
-		# Determine new locations OLD
-		# new_cases = prev_locations.append(updated_locations).drop_duplicates(subset = ['Suburb', 'Place', 'Date'], keep = False)
+		# Determine new locations
+		new_cases = prev_locations.append(updated_locations).drop_duplicates(subset = ['Exposure Site', 'Suburb', 'Date'], keep = False)
 
 		if new_cases.shape[0] == 0:
+			print('No new cases found')
 			return False
 
 		# Update locations on disk
@@ -269,8 +230,11 @@ class MyClient(commands.Bot):
 
 	# Check for new cases (some checks )
 	async def poll_cases(self):
-		if self.server_settings is not None and self.locations is not None:
-			await self.check_new_cases(url)		
+		try:
+			if self.server_settings is not None and self.locations is not None:
+				await self.check_new_cases(url)		
+		except:
+			print(traceback.format_exc())
 
 client = MyClient('!')
 
