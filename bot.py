@@ -30,7 +30,7 @@ def parse_url(url):
 	page_text = page.text
 	latest_cases = re.search('".*csv"', page.text).group(0)
 
-	df_cases = pd.read_csv(latest_cases[1:-1]).drop(['Event Id', 'Status', 'State'], axis = 1) # Remove quote marks from url
+	df_cases = pd.read_csv(latest_cases[1:-1], names = ['Event Id', 'Status', 'Exposure Site', 'Street', 'Suburb', 'State', 'Date', 'Arrival Time', 'Departure Time', 'Contact']).drop(['Event Id', 'Status', 'State'], axis = 1) # Remove quote marks from url
 
 	# Correct inconsistent dates (some do not have zeros in front - makes comparisons difficult)
 	df_cases['Date'] = df_cases['Date'].apply(lambda x: '0' + x if len(x) > 2 and x[1] == '/' else x)
